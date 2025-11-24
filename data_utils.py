@@ -11,7 +11,7 @@ import torch
 import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset
-from .util.misc import nested_tensor_from_tensor_list 
+from util.misc import nested_tensor_from_tensor_list 
 from typing import List, Tuple
 import torchvision.transforms as T
 
@@ -20,7 +20,7 @@ import torchvision.transforms as T
 # CONSTANTS
 # ============================================================
 
-DATA_ROOT = os.path.join("..", "data")   # Project root-level directory
+DATA_ROOT = os.path.join(".", "data")   # Project root-level directory
 
 CLASS_NAMES = [
     "VenusExpress", "Cheops", "LisaPathfinder", "ObservationSat1",

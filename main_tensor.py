@@ -8,7 +8,7 @@ import os
 import importlib.util
 import argparse # <--- NEW IMPORT: Enables command-line arguments
 
-from .data_utils import (
+from data_utils import (
     preprocess_original_csv,
     validate_image_paths,
     convert_to_coco_json,
@@ -21,8 +21,7 @@ from .data_utils import (
 # ============================================================
 
 MODEL_NAME = "detr_pipeline_functions_tensor"
-MODEL_FILE_PATH = f"{MODEL_NAME}.py"
-
+MODEL_FILE_PATH = f"detection_detr/{MODEL_NAME}.py"
 
 # ============================================================
 # CSV ENSURE FUNCTION
