@@ -38,7 +38,7 @@ conda create -p ./detr_env python=3.9 -y
     # If you don't have a requirements.txt, list key packages here:
     # pip install torch torchvision transformers
     ```
-
+```bash
     Package                  Version
 ------------------------ -----------
 absl-py                  2.3.1
@@ -101,10 +101,14 @@ Werkzeug                 3.1.3
 wheel                    0.45.1
 zipp                     3.23.0
 
+```
+
 ## 🏃 Usage
 
 ### Training
 
 To train the DETR model on your dataset, run the following command:
-sbatch detection_detr/run_detr_tensor.sh
+
 ```bash
+sbatch detection_detr/run_detr_tensor.sh
+```
