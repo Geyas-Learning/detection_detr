@@ -2,12 +2,12 @@
 #SBATCH -J Detection # Job name
 #SBATCH -o /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.out
 #SBATCH -e /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.err
-#SBATCH --time=24:00:00 # Extend runtime for inference
+#SBATCH --time=48:00:00 # Extend runtime for inference
 #SBATCH --nodes=1 # Single node
-#SBATCH --ntasks=2 # Two tasks (processes) for DDP
-#SBATCH --cpus-per-task=10 # Threads for data loading
+#SBATCH --ntasks=1 # Two tasks (processes) for DDP
+#SBATCH --cpus-per-task=24 # Threads for data loading
 #SBATCH --mem=128G # System memory
-#SBATCH --gres=gpu:2 # ✅ Requests 2 GPUs
+#SBATCH --gres=gpu:1 # ✅ Requests 2 GPUs
 #SBATCH -p gpu # ✅ Use 'gpu' partition
 
 # =======================================================
