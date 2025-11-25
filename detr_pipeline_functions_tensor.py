@@ -186,14 +186,14 @@ def train_model(config):
             train_set,
             batch_size=config["batch"],
             collate_fn=detr_collate_fn,
-            num_workers=1 // world_size,
+            num_workers=2 // world_size,
             sampler=train_sampler # Use the sampler instead of shuffle
         )
         val_loader = DataLoader(
             val_set,
             batch_size=config["batch"],
             collate_fn=detr_collate_fn,
-            num_workers=1 // world_size,
+            num_workers=2 // world_size,
             sampler=val_sampler # Use the sampler
         )
     else:
@@ -201,14 +201,14 @@ def train_model(config):
             train_set,
             batch_size=config["batch"],
             collate_fn=detr_collate_fn,
-            num_workers=1,
+            num_workers=2,
             shuffle=True
         )
         val_loader = DataLoader(
             val_set,
             batch_size=config["batch"],
             collate_fn=detr_collate_fn,
-            num_workers=1,
+            num_workers=2,
             shuffle=False
         )
 
@@ -385,7 +385,7 @@ def train_model(config):
                 batch_size=config["batch"], 
                 shuffle=False,
                 collate_fn=coco_collate,
-                num_workers=4
+                num_workers=2
             )
             
             evaluator = CocoEvaluator(coco_dataset.coco, ["bbox"])
@@ -527,7 +527,7 @@ def generate_classification_metrics(config):
         batch_size=config["batch"],
         shuffle=False,
         collate_fn=detr_collate_fn,
-        num_workers=4,
+        num_workers=2,
     )
 
     all_targets = []
