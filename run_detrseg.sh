@@ -1,13 +1,13 @@
 #!/bin/bash -l
-#SBATCH -J Detection # Job name
+#SBATCH -J Segmentation # Job name
 #SBATCH -o /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.out
 #SBATCH -e /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.err
-#SBATCH --time=05:00:00 # Extend runtime for inference
+#SBATCH --time=48:00:00 # Extend runtime for inference
 #SBATCH --nodes=1 # Single node
-#SBATCH --ntasks=2 # Two tasks (processes) for DDP
-#SBATCH --cpus-per-task=10 # Threads for data loading
+#SBATCH --ntasks=1 # Two tasks (processes) for DDP
+#SBATCH --cpus-per-task=24 # Threads for data loading
 #SBATCH --mem=128G # System memory
-#SBATCH --gres=gpu:2 # ✅ Requests 2 GPUs
+#SBATCH --gres=gpu:1 # ✅ Requests 2 GPUs
 #SBATCH -p gpu # ✅ Use 'gpu' partition
 
 # =======================================================
@@ -39,7 +39,7 @@ SCRIPT_ARGS="$@"
 
 if [ -z "$PYTHON_SCRIPT" ]; then
     # CRITICAL FIX: Update the default path to include the new subfolder
-    PYTHON_SCRIPT="detection_detr/main_tensor.py"
+    PYTHON_SCRIPT="detection_detr/segmentation_main.py"
 fi
 
 echo "=============================="
@@ -57,9 +57,8 @@ nvidia-smi || echo "⚠️ No GPU info (running CPU fallback?)"
 
 # KEY FIX: Use torchrun to launch one process per task ($SLURM_NTASKS is 2)
 # torchrun handles setting DDP environment variables for your PyTorch code.
-torchrun \
-    --nproc_per_node=$SLURM_NTASKS \
-    "$PYTHON_SCRIPT" $SCRIPT_ARGS
+python "$PYTHON_SCRIPT" $SCRIPT_ARGS
+
 
 EXIT_CODE=$?
 
@@ -72,5 +71,5 @@ else
     echo "❌ Job failed with exit code $EXIT_CODE"
 fi
 
-echo "📦 Results stored under: runs_tensor/train_detr34/"
+echo "📦 Results stored under: runs_segmentation/train_detrSeg"
 echo "🕒 Finished at: $(date)"
