@@ -60,7 +60,7 @@ def main():
     parser.add_argument(
         '--epochs', 
         type=int, 
-        default=25, 
+        default=40, 
         help='Number of training epochs (default: 25).'
     )
     parser.add_argument(
@@ -146,7 +146,7 @@ def main():
         "num_classes": 10,
 
         # Test images (OUTSIDE /data/)
-        "test_images_full_path": os.path.join("..", "test", "images")
+        "test_images_full_path": os.path.join(".", "test", "images")
     }
 
     # ------------------------------------------------------------
