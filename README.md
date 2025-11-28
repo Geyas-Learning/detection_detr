@@ -111,4 +111,58 @@ To train the DETR model on your dataset, run the following command:
 
 ```bash
 sbatch detection_detr/run_detr_tensor.sh
+sbatch detection_detr/run_detrseg.sh
 ```
+
+#### Tree structure for the files and folder
+
+```bash
+cvia/
+├── detr_env/                # (conda environment - create here)
+├── logs/
+│
+├── project_detr/
+│   ├── __pycache__/
+│   ├── data/
+│   │   ├── images/
+│   │   ├── mask/
+│   │   ├── train.csv
+│   │   ├── val.csv
+│   │  
+│   │
+│   ├── detection_detr/
+│   │   ├── __pycache__/
+│   │   ├── detr_model/............
+│   │   │
+│   │   ├── util/.........
+│   │   │
+│   │   ├── coco_custom.py
+│   │   ├── data_utils.py
+│   │   ├── detr_pipeline_functions_tensor.py
+│   │   ├── detr_segmentation_pipeline.py
+│   │   ├── main_tensor.py
+│   │   ├── segmentation_data_utils.py
+│   │   |── segmentation_main.py
+|   │   ├── README.md
+|   │   ├── requirements.txt
+|   │   ├── run_detr_tensor.sh
+|   │   └── run_detreg.sh
+│   |
+├   |── runs_segmentation/        #Segmentation output will generate in this folder after execution
+│   |        ├── train_detrSeg/
+│   |        ├── weights_seg/
+│   |        ├── tensorboard_seg/
+│   |        ├── seg_test_predictions/
+│   |        └── seg_visualized_test/
+│   |
+├   |── segmentation_test/          #segmentation test dataset folder
+│   |            ├── images/
+│   | 
+|   └── test/                       #detection test dataset folder
+|         ├── images/   
+|
+|
+├── runs_tensor/train_detr34    #detection output files will generate here
+
+```
+
