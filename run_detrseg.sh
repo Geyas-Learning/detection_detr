@@ -4,11 +4,11 @@
 #SBATCH -e /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.err
 #SBATCH --time=48:00:00 # Extend runtime for inference
 #SBATCH --nodes=1 # Single node
-#SBATCH --ntasks=1 # Two tasks (processes) for DDP
+#SBATCH --ntasks=1 # ✅ Correct: Request 1 task for single-GPU
 #SBATCH --cpus-per-task=24 # Threads for data loading
 #SBATCH --mem=128G # System memory
-#SBATCH --gres=gpu:1 # ✅ Requests 2 GPUs
-#SBATCH -p gpu # ✅ Use 'gpu' partition
+#SBATCH --gres=gpu:1 # ✅ Correct: Request 1 GPU
+#SBATCH -p gpu # Use 'gpu' partition
 
 # =======================================================
 # 1️⃣  Environment Setup
@@ -38,8 +38,7 @@ shift
 SCRIPT_ARGS="$@"
 
 if [ -z "$PYTHON_SCRIPT" ]; then
-    # CRITICAL FIX: Update the default path to include the new subfolder
-    PYTHON_SCRIPT="detection_detr/segmentation_main.py"
+    PYTHON_SCRIPT="detection_detr/main_segm.py"
 fi
 
 echo "=============================="
@@ -49,27 +48,21 @@ echo "ARGUMENTS: $SCRIPT_ARGS"
 echo "=============================="
 
 # =======================================================
-# 4️⃣  Run Training + Inference (DDP using torchrun)
+# 4️⃣  Run Training + Inference (Single GPU)
 # =======================================================
-echo "🚀 Starting detr Pipeline with torchrun (DDP)"
+echo "🚀 Starting DETR Segmentation Pipeline (Single GPU)" # ✅ Updated text
 echo "GPU Info:"
 nvidia-smi || echo "⚠️ No GPU info (running CPU fallback?)"
 
-# KEY FIX: Use torchrun to launch one process per task ($SLURM_NTASKS is 2)
-# torchrun handles setting DDP environment variables for your PyTorch code.
+# ✅ CRITICAL FIX: Direct Python execution for single GPU
 python "$PYTHON_SCRIPT" $SCRIPT_ARGS
-
 
 EXIT_CODE=$?
 
-# =======================================================
-# 5️⃣  Wrap-Up
-# =======================================================
 if [ $EXIT_CODE -eq 0 ]; then
     echo "✅ Job completed successfully!"
 else
     echo "❌ Job failed with exit code $EXIT_CODE"
 fi
 
-echo "📦 Results stored under: runs_segmentation/train_detrSeg"
 echo "🕒 Finished at: $(date)"

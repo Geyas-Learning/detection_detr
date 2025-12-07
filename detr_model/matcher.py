@@ -69,9 +69,12 @@ class HungarianMatcher(nn.Module):
 
         # Compute the L1 cost between boxes
         cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
+        clamped_out_bbox = out_bbox.clamp(min=0.0, max=1.0) # Correctly introduced
 
-        # Compute the giou cost betwen boxes
-        cost_giou = -generalized_box_iou(box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox))
+        cost_giou = -generalized_box_iou(
+            box_cxcywh_to_xyxy(clamped_out_bbox), # Correctly uses the clamped boxes
+            box_cxcywh_to_xyxy(tgt_bbox)
+        )[0]
 
         # Final cost matrix
         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou

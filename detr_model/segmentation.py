@@ -32,8 +32,13 @@ class DETRsegm(nn.Module):
 
         hidden_dim, nheads = detr.transformer.d_model, detr.transformer.nhead
         self.bbox_attention = MHAttentionMap(hidden_dim, hidden_dim, nheads, dropout=0.0)
-      #self.mask_head = MaskHeadSmallConv(hidden_dim + nheads, [1024, 512, 256], hidden_dim)
-        self.mask_head = MaskHeadSmallConv(hidden_dim + nheads, [2048, 1024, 512], hidden_dim)
+
+        # For your ResNet-34 backbone features[2], [1], [0] channels: [512, 256, 128]
+        self.mask_head = MaskHeadSmallConv(
+            hidden_dim + nheads, [512, 256, 128], hidden_dim
+        )
+
+
 
     def forward(self, samples: NestedTensor):
         if isinstance(samples, (list, torch.Tensor)):
@@ -225,7 +230,7 @@ class PostProcessSegm(nn.Module):
     def forward(self, results, outputs, orig_target_sizes, max_target_sizes):
         assert len(orig_target_sizes) == len(max_target_sizes)
         max_h, max_w = max_target_sizes.max(0)[0].tolist()
-        outputs_masks = outputs["pred_masks"]
+        outputs_masks = outputs["pred_masks"].squeeze(2)
         outputs_masks = F.interpolate(outputs_masks, size=(max_h, max_w), mode="bilinear", align_corners=False)
         outputs_masks = (outputs_masks.sigmoid() > self.threshold).cpu()
 
