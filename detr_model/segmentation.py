@@ -222,7 +222,7 @@ def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: f
 
 
 class PostProcessSegm(nn.Module):
-    def __init__(self, threshold=0.5):
+    def __init__(self, threshold=0.3):
         super().__init__()
         self.threshold = threshold
 

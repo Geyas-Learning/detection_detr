@@ -1,6 +1,6 @@
 """
 =========================================================
-DATA UTILITIES — for DETR spacecraft model (w/ Augmentation)
+DATA UTILITIES — for DETR spacecraft model
 =========================================================
 """
 import os
@@ -12,83 +12,59 @@ from torch.utils.data import Dataset
 from os.path import join, isfile
 from torch import nn, Tensor
 from typing import List, Tuple
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-
-# ✅ ESSENTIAL DETR IMPORT: Now imports from the util/misc.py file
 from util.misc import nested_tensor_from_tensor_list
-from util.box_ops import box_cxcywh_to_xyxy
+
 
 # ✅ Base data directory
-DATA_ROOT = os.path.join(".", "data") # assuming script runs from cvia/
+DATA_ROOT = os.path.join(".", "data")
 
 CLASS_NAMES = [
     "VenusExpress", "Cheops", "LisaPathfinder", "ObservationSat1",
     "Proba2", "Proba3", "Proba3ocs", "Smart1", "Soho", "XMM Newton"
 ]
 NUM_CLASSES = len(CLASS_NAMES)
+# Mapping from string name to integer class ID (0 to 9)
 CLASS_MAP = {name: i for i, name in enumerate(CLASS_NAMES)}
 
+
 # ============================================================
-# COLLATE FUNCTION (UNCHANGED)
+# COLLATE FUNCTION
 # ============================================================
 def detr_collate_fn(batch: List[Tuple[Tensor, dict]]):
     """
-    Collate function for DETR DataLoader.
-    Batches images into a NestedTensor using the official utility 
-    and keeps targets as a list of dicts.
+    Collate function specialized for the DETR DataLoader.
+    
+    1. Batches input images into a NestedTensor (padding images to the max size 
+       in the batch, along with a mask indicating the original content).
+    2. Keeps targets (boxes, labels) as a list of dictionaries.
     """
     # Separate images and targets
     images = [item[0] for item in batch]
     targets = [item[1] for item in batch]
     
-    # Use the utility function to create the NestedTensor (from util.misc)
+    # utility function to create the NestedTensor (from util.misc)
     nested_tensor = nested_tensor_from_tensor_list(images) 
-
     return nested_tensor, targets
 
+
 # ============================================================
-# 1️⃣ DATASET CLASS (MODIFIED w/ AUGMENTATION)
+# DATASET CLASS (for labeled data)
 # ============================================================
 class SpacecraftDataset(Dataset):
     """
-    Loads labeled spacecraft images for training/validation w/ augmentation.
-    Returns: (image_tensor, target_dict)
-    target_dict = {'boxes': tensor(N, 4) in cxcywh normalized, 'labels': tensor(N)}
+    Loads labeled spacecraft images for DETR training/validation.
+    
+    The output format is: (image_tensor, target_dict)
+    - image_tensor: Normalized [C, H, W] tensor (e.g., [3, 224, 224]).
+    - target_dict: {'boxes': normalized cxcywh tensor, 'labels': class IDs, 'orig_size': H, W}
     """
-    def __init__(self, csv_file, root_dir=DATA_ROOT, training=False):
+    def __init__(self, csv_file, root_dir=DATA_ROOT, transform=None):
         if not os.path.exists(csv_file):
             raise FileNotFoundError(f"CSV file not found: {csv_file}")
+        # Processed CSV with columns: image_path, xmin, ymin, xmax, ymax, class_id
         self.data = pd.read_csv(csv_file)
         self.root_dir = root_dir
-        self.training = training  # ✅ Training mode flag
-        
-        # ✅ Train transforms (augmentation + normalization)
-        self.train_transform = A.Compose([
-            A.HorizontalFlip(p=0.5),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.4),
-            A.HueSaturationValue(hue_shift_limit=15, sat_shift_limit=25, val_shift_limit=15, p=0.3),
-            A.OneOf([
-                A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=5, p=0.7),
-                A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=0.3),
-            ], p=0.4),
-            A.Resize(224, 224),  # Fixed size after aug
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
-        ], bbox_params=A.BboxParams(
-            format='coco',  # [x_center, y_center, width, height] normalized [0,1]
-            label_fields=['category_ids']
-        ))
-        
-        # ✅ Val/Test transforms (normalization only)
-        self.test_transform = A.Compose([
-            A.Resize(224, 224),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
-        ], bbox_params=A.BboxParams(
-            format='coco',
-            label_fields=['category_ids']
-        ))
+        self.transform = transform
 
     def __len__(self):
         return len(self.data)
@@ -102,68 +78,55 @@ class SpacecraftDataset(Dataset):
 
         full_h, full_w = img.shape[:2]
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # Hardcoded resize for simplicity/consistency (224x224)
+        img_resized = cv2.resize(img, (224, 224))
+
+        xmin, ymin, xmax, ymax = row["xmin"], row["ymin"], row["xmax"], row["ymax"]
+        class_id = row["class_id"]
         
-        # Handle no-object case
-        if pd.isna(row["xmin"]) or row["xmin"] == -1:
-            bboxes = []
-            labels = []
-        else:
-            # Convert pixel bbox to normalized COCO format [x_center, y_center, w, h]
-            xmin, ymin, xmax, ymax = row["xmin"], row["ymin"], row["xmax"], row["ymax"]
-            x_center = (xmin + xmax) / 2 / full_w
-            y_center = (ymin + ymax) / 2 / full_h
-            width = (xmax - xmin) / full_w
-            height = (ymax - ymin) / full_h
-            bboxes = [[x_center, y_center, width, height]]
-            labels = [int(row["class_id"])]
+        # --- DETR Target Preparation (Normalized cxcywh) ---
+        # 1. Calculate center coordinates
+        x_center = ((xmin + xmax) / 2) / full_w
+        y_center = ((ymin + ymax) / 2) / full_h
+        # 2. Calculate width and height
+        bw = (xmax - xmin) / full_w
+        bh = (ymax - ymin) / full_h
 
-        # ✅ Apply augmentation (train) or normalization (val/test)
-        if self.training and bboxes:  # Aug only if objects present
-            transformed = self.train_transform(image=img, bboxes=bboxes, category_ids=labels)
-        else:
-            transformed = self.test_transform(image=img, bboxes=bboxes, category_ids=labels)
+        # Bounding box in cxcywh normalized format (N, 4) where N=1
+        bbox_norm = torch.tensor([x_center, y_center, bw, bh], dtype=torch.float32).unsqueeze(0)
         
-        img_tensor = transformed['image']
-        bboxes = transformed['bboxes']
-        labels = transformed['category_ids']
+        # Labels must be LongTensor (size N)
+        labels = torch.tensor([class_id], dtype=torch.long) 
 
-        # ✅ Convert back to DETR format (cxcywh normalized)
-        if bboxes:
-            # Albumentations returns COCO format, DETR expects cxcywh
-            bboxes_cxcywh = torch.as_tensor(bboxes, dtype=torch.float32)
-            target = {
-                'boxes': bboxes_cxcywh,  # Already cxcywh normalized
-                'labels': torch.as_tensor(labels, dtype=torch.int64),
-                'orig_size': torch.as_tensor([full_h, full_w], dtype=torch.int64),
-                'size': torch.as_tensor([224, 224], dtype=torch.int64)
-            }
-        else:
-            target = {
-                'boxes': torch.zeros((0, 4), dtype=torch.float32),
-                'labels': torch.zeros(0, dtype=torch.int64),
-                'orig_size': torch.as_tensor([full_h, full_w], dtype=torch.int64),
-                'size': torch.as_tensor([224, 224], dtype=torch.int64)
-            }
+        # Image Tensor (C, H, W) normalized [0, 1]
+        img_tensor = torch.tensor(img_resized, dtype=torch.float32).permute(2, 0, 1) / 255.0
 
-        return img_tensor, target
+        # Create the DETR target dictionary
+        target_dict = {
+            'boxes': bbox_norm,
+            'labels': labels,
+            'orig_size': torch.as_tensor([full_h, full_w]), 
+            'size': torch.as_tensor([img_resized.shape[0], img_resized.shape[1]]) 
+        }
+
+        return img_tensor, target_dict
+
 
 # ============================================================
-# 1️⃣b TEST DATASET CLASS (MODIFIED w/ Albumentations)
+# TEST DATASET CLASS (for inference)
 # ============================================================
 class TestSpacecraftDataset(Dataset):
-    def __init__(self, img_dir):
+    """
+    Loads raw images from a directory for inference.
+    Returns: (image_tensor, image_name, original_height, original_width)
+    """
+    def __init__(self, img_dir, transform=None):
         self.img_dir = img_dir
         self.image_names = sorted([
             f for f in os.listdir(img_dir)
             if isfile(join(img_dir, f)) and f.lower().endswith(('.jpg', '.png', '.jpeg'))
         ])
-        
-        # ✅ Test transform (normalization only)
-        self.transform = A.Compose([
-            A.Resize(224, 224),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
-        ])
+        self.transform = transform
 
     def __len__(self):
         return len(self.image_names)
@@ -174,25 +137,30 @@ class TestSpacecraftDataset(Dataset):
         img = cv2.imread(img_path)
         if img is None:
             print(f"[ERROR] Could not read image: {img_path}")
+            # Return dummy tensor on failure to prevent crash
             return torch.empty((3, 224, 224), dtype=torch.float32), img_name, 0, 0
 
         full_h, full_w = img.shape[:2]
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # Must match the training size
+        img_resized = cv2.resize(img, (224, 224))
+        # Image Tensor (C, H, W) normalized [0, 1]
+        img_tensor = torch.tensor(img_resized, dtype=torch.float32).permute(2, 0, 1) / 255.0
         
-        # Apply normalization
-        transformed = self.transform(image=img)
-        img_tensor = transformed['image']
-        
+        # Return original dimensions for post-processing and rescaling of predicted boxes
         return img_tensor, img_name, full_h, full_w
 
+
 # ============================================================
-# 2️⃣ CSV PREPROCESSING (UNCHANGED)
+# CSV PREPROCESSING
 # ============================================================
 def preprocess_original_csv(csv_path, output_csv, split="train"):
     """
-    Converts original annotation CSV into model-ready format.
-    Input: [Image name, Class, Bounding box]
-    Output: [image_path, xmin, ymin, xmax, ymax, class_id]
+    Converts original annotation CSV (from challenge) into a simplified, 
+    model-ready format containing bounding box coordinates and class IDs.
+    
+    Input columns: [Image name, Class, Bounding box]
+    Output columns: [image_path, xmin, ymin, xmax, ymax, class_id]
     """
     print(f"[INFO] Preprocessing {csv_path} → {output_csv}")
     df = pd.read_csv(os.path.join(DATA_ROOT, csv_path))
@@ -202,13 +170,17 @@ def preprocess_original_csv(csv_path, output_csv, split="train"):
         image_name = row["Image name"]
         cls_name = row["Class"]
         bbox_str = row["Bounding box"]
+        # Skip if the class name is not one of the 10 target classes
         if cls_name not in CLASS_MAP:
             continue
         try:
+            # Parse the bounding box string "(x1, y1, x2, y2)"
             xmin, ymin, xmax, ymax = [int(x.strip()) for x in bbox_str.strip("()").split(",")]
         except Exception:
             print(f"[WARN] Skipping malformed bbox: {bbox_str}")
             continue
+        
+        # Construct the relative path for easy lookup in the data directory
         image_path = os.path.join("images", cls_name, split, image_name)
         new_rows.append({
             "image_path": image_path,
@@ -216,13 +188,19 @@ def preprocess_original_csv(csv_path, output_csv, split="train"):
             "class_id": CLASS_MAP[cls_name]
         })
 
+    # Save the cleaned and processed data to the output CSV
     pd.DataFrame(new_rows).to_csv(output_csv, index=False)
     print(f"[INFO] ✅ Saved processed CSV → {output_csv} ({len(new_rows)} rows)")
 
+
 # ============================================================
-# 3️⃣ VALIDATION (UNCHANGED)
+# VALIDATION
 # ============================================================
 def validate_image_paths(csv_path):
+    """
+    Checks the specified processed CSV for file paths and reports how many 
+    images are valid (exist) and how many are missing.
+    """
     print(f"[CHECK] Validating image paths from: {csv_path}")
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV not found: {csv_path}")

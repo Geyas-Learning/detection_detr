@@ -1,5 +1,5 @@
 """
-DETR Model for spacecraft detection
+DETR Model for spacecraft detection (with Loss Curves)
 """
 import os
 import torch
@@ -9,28 +9,38 @@ from data_utils import SpacecraftDataset, TestSpacecraftDataset, DATA_ROOT, NUM_
 import pandas as pd
 import numpy as np
 import cv2
-
-# Import necessary DETR components
+import random
+import matplotlib.pyplot as plt 
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from detr_model.detr import SetCriterion, PostProcess
 from detr_model.__init__ import build_model
 from detr_model.matcher import HungarianMatcher
-
-# ✅ ESSENTIAL DETR IMPORTS: Now imports from the util/ folder
 from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
 from util.misc import nested_tensor_from_tensor_list
-
-import random
 
 def set_seed(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # optional strict determinism:
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = False
 
-set_seed(42)
+# ============================================================
+# UTILITY FUNCTION: LOSS PLOTTING (NEW)
+# ============================================================
+def plot_losses(train_losses, val_losses, save_path):
+    """Plots and saves the training and validation loss history."""
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_losses, label='Train Loss', marker='o', linestyle='--')
+    plt.plot(val_losses, label='Validation Loss', marker='o', linestyle='-')
+    plt.title('DETR Training and Validation Loss Over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()
+    print(f"✅ Saved loss plot to: {save_path}")
+    # 
 
 
 # ============================================================
@@ -41,68 +51,62 @@ class Args:
     """Simple class to hold required DETR configuration arguments."""
     def __init__(self, config):
         
-        
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu' 
-        
-        # FIX #2: Required by detr.py's build function (dataset_file, frozen_weights)
-        self.dataset_file = 'coco' 
+        self.dataset_file = 'custom' 
         self.frozen_weights = None
-        
-        # FIX #3: Ensure num_classes is ALWAYS set (10 classes + 1 "No Object" class = 11)
-        self.num_classes = config.get("num_classes", 11) 
+        self.num_classes = config.get("num_classes", NUM_CLASSES + 1) 
         
         # --- Model Architecture ---
-        self.backbone = 'resnet50' # Standard DETR backbone
+        self.backbone = 'resnet50' 
         self.dilation = False
         self.position_embedding = 'sine'
-        self.masks = config.get("masks", False) # Ensures this is set correctly
-        self.num_queries = 100 # Max number of objects DETR will predict per image
+        self.masks = config.get("masks", False) 
+        self.num_queries = 100 
         self.aux_loss = True
-        self.lr = config.get("lr", 5e-5)
-        self.lr_backbone = config.get("lr_backbone", 1e-5)
+        self.lr_backbone = 1e-5 
         
         # --- Transformer parameters ---
         self.hidden_dim = 256
         self.dropout = 0.1
         self.nheads = 8
         self.dim_feedforward = 2048
-        self.enc_layers = 8
-        self.dec_layers = 8
+        self.enc_layers = 6
+        self.dec_layers = 6
         self.pre_norm = False
-        self.clip_max_norm = 0.1 # DETR often uses gradient clipping
+        self.clip_max_norm = 0.1 
 
         # --- Loss coefficients ---
         self.set_cost_class = 1
         self.set_cost_bbox = 5
         self.set_cost_giou = 2
-        self.bbox_loss_coef = 6
-        self.giou_loss_coef = 3
-        self.eos_coef = 0.1 # Relative weight of the "no object" class
+        self.bbox_loss_coef = 5
+        self.giou_loss_coef = 2
+        self.eos_coef = 0.1 
 
 # ============================================================
 # TRAINING FUNCTION
 # ============================================================
 def train_model(config):
+    set_seed(42)
     print("[DETR] 🚀 Training started...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # 1. Build Model and Criterion
     detr_args = Args(config)
     
-    # DETR num_classes is typically the number of actual classes (10) + 1 (for 'no object')
-    detr_args.num_classes = NUM_CLASSES
+    
+    detr_args.num_classes = NUM_CLASSES + 1 
     model, criterion, postprocessors = build_model(detr_args)
     model.to(device)
     criterion.to(device)
     
-    # 2. Multi-GPU support (using DataParallel for simplicity)
-    if torch.cuda.device_count() > 1:
-        print(f"⚡ Using {torch.cuda.device_count()} GPUs with DataParallel")
-        model = torch.nn.DataParallel(model)
-
+    # 2. Loss Tracking Initialization
+    train_loss_history = []
+    val_loss_history = []
+    
     # 3. Load datasets
-    train_data = SpacecraftDataset(config["train_csv"], DATA_ROOT, training=True)   # Aug ON
-    val_data = SpacecraftDataset(config["val_csv"], DATA_ROOT, training=False)      # Aug OFF
+    train_data = SpacecraftDataset(config["train_csv"], DATA_ROOT)
+    val_data = SpacecraftDataset(config["val_csv"], DATA_ROOT)
 
     # 4. DataLoader with custom collate_fn
     train_loader = DataLoader(train_data, batch_size=config["batch"], shuffle=True,
@@ -111,17 +115,23 @@ def train_model(config):
                             num_workers=8, pin_memory=True, collate_fn=detr_collate_fn)
 
     # 5. Optimizer
-    # Different learning rates for the backbone and transformer/head are standard
     param_dicts = [
-        {"params": [p for n, p in model.named_parameters()
-                    if "backbone" not in n and p.requires_grad]},
-        {"params": [p for n, p in model.named_parameters()
-                    if "backbone" in n and p.requires_grad],
-        "lr": detr_args.lr_backbone},
+        {"params": [p for n, p in model.named_parameters() if "backbone" not in n and p.requires_grad]},
+        {"params": [p for n, p in model.named_parameters() if "backbone" in n and p.requires_grad], "lr": detr_args.lr_backbone},
     ]
-    opt = optim.AdamW(param_dicts, lr=detr_args.lr, weight_decay=1e-4)
+    opt = optim.AdamW(param_dicts, lr=1e-5, weight_decay=1e-4)
+    scheduler = ReduceLROnPlateau(
+        opt, 
+        mode='min', 
+        factor=0.1, 
+        patience=5
+    )
+
+    best_loss = float("inf") 
 
     best_loss = float("inf")
+    save_dir = os.path.join(config["project_dir"], "weights")
+    os.makedirs(save_dir, exist_ok=True)
 
     print(f"[DETR] Training for {config['epochs']} epochs...")
     for epoch in range(config["epochs"]):
@@ -129,7 +139,6 @@ def train_model(config):
         model.train()
         total_loss = 0
         for samples, targets in train_loader:
-            # samples is NestedTensor, targets is list of dicts
             samples = samples.to(device)
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             
@@ -149,6 +158,7 @@ def train_model(config):
             total_loss += losses.item()
 
         avg_train_loss = total_loss / len(train_loader)
+        train_loss_history.append(avg_train_loss) # 🔥 Log train loss
 
         # --- Validation ---
         model.eval()
@@ -165,20 +175,23 @@ def train_model(config):
                 val_total_loss += losses.item()
 
         avg_val_loss = val_total_loss / len(val_loader)
+        val_loss_history.append(avg_val_loss) # 🔥 Log val loss
+        scheduler.step(avg_val_loss)
 
         print(f"Epoch {epoch+1}/{config['epochs']} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
         # Save model
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
-            save_dir = os.path.join(config["project_dir"], "weights")
-            os.makedirs(save_dir, exist_ok=True)
             model_path = os.path.join(save_dir, f"{config['run_name']}_best.pt")
             
-            # Save the raw model state dict
             model_to_save = model.module if isinstance(model, torch.nn.DataParallel) else model
             torch.save(model_to_save.state_dict(), model_path)
             print(f"✅ Saved best model (Val Loss: {best_loss:.4f}) → {model_path}")
+
+    # Plot and save losses after training
+    loss_plot_path = os.path.join(config["project_dir"], f"{config['run_name']}_loss_history.png")
+    plot_losses(train_loss_history, val_loss_history, loss_plot_path)
 
     print("[DETR] ✅ Training complete.")
 
@@ -196,7 +209,8 @@ def test_model(config):
 
     # 1. Load Model and Post-processor
     detr_args = Args(config)
-    detr_args.num_classes = NUM_CLASSES
+    
+    detr_args.num_classes = NUM_CLASSES + 1 
     model, _, postprocessors = build_model(detr_args)
     model.to(device)
     
@@ -277,7 +291,7 @@ def test_model(config):
 
 
 # ============================================================
-# VISUALIZATION (Kept from original)
+# VISUALIZATION
 # ============================================================
 def visualize_predictions(config):
     print("[Visualizer] 🖼️ Starting prediction visualization...")

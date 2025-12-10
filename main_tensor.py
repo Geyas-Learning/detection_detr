@@ -8,9 +8,7 @@ import os
 from data_utils import preprocess_original_csv, validate_image_paths, DATA_ROOT
 
 
-# ------------------------------------------------------------
-# CHANGE MODEL NAME HERE
-# ------------------------------------------------------------
+
 MODEL_NAME = "detr_pipeline_functions_tensor"
 MODEL_FILE_PATH = f"detection_detr/{MODEL_NAME}.py"
 
@@ -64,16 +62,14 @@ def main():
     # Config
     # ------------------------------------------------------------
     config = {
-        "epochs": 100,
+        "epochs": 150,
         "batch": 16, # Reduced batch size for DETR/ResNet50
         "imgsz": 224,
         "project_dir": "./runs/train_detr",
         "train_csv": train_csv,
         "val_csv": val_csv,
         "test_images_full_path": "./test/images",
-        "run_name": MODEL_NAME,
-        "lr": 5e-5,
-        "lr_backbone": 1e-5,
+        "run_name": MODEL_NAME
     }
     os.makedirs(config["project_dir"], exist_ok=True)
 

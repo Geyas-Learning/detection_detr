@@ -26,11 +26,11 @@ class Args:
         self.num_classes = SEG_NUM_CLASSES  # 2 classes: body, panel
 
         self.masks = True
-        self.mask_loss_coef = 2.0
-        self.dice_loss_coef = 2.0
+        self.mask_loss_coef = 1.0
+        self.dice_loss_coef = 1.0
 
-        self.lr = 5e-5
-        self.lr_backbone = 1e-5
+        self.lr = 1e-4
+        self.lr_backbone = 1e-4
         self.weight_decay = 1e-4
         self.num_queries = 100
         self.epochs = config["epochs"]
@@ -43,11 +43,11 @@ class Args:
         self.dec_layers = 6
         self.pre_norm = False
         self.aux_loss = True
-        self.bbox_loss_coef = 2.0
+        self.bbox_loss_coef = 1.0
         self.giou_loss_coef = 1.0
         self.eos_coef = 0.1
 
-        self.backbone = "resnet34"
+        self.backbone = "resnet18"
         self.position_embedding = "sine"
         self.dilation = False
         self.set_cost_class = 1.0
@@ -183,6 +183,7 @@ def test_model(config):
     weights_path = os.path.join(
         config["project_dir"], f'{config["run_name"]}_best.pth'
     )
+
     if not os.path.exists(weights_path):
         print(f"[ERROR] Weights not found: {weights_path}")
         return
@@ -223,9 +224,26 @@ def test_model(config):
             samples = nested_tensor_from_tensor_list([img_tensor]).to(device)
 
             outputs = model(samples)
-            # build dummy results list to pass through PostProcessSegm
-            results = [{"scores": outputs["pred_logits"][0].softmax(-1).max(-1).values,
-                        "labels": outputs["pred_logits"][0].softmax(-1).argmax(-1)}]
+
+            
+            logits = outputs["pred_logits"][0]
+            probs = logits.softmax(-1)
+            scores, labels = probs.max(-1)          # [num_queries]
+
+            score_threshold = 0.1                   # tune if needed
+            keep = scores > score_threshold
+            scores = scores[keep]
+            labels = labels[keep]
+
+            if scores.numel() == 0:
+                print(f"[WARN] No detections above threshold for {file_name}")
+                continue
+
+            results = [{
+                "scores": scores,
+                "labels": labels
+            }]
+            
 
             orig_target_sizes = orig_size.unsqueeze(0)
             max_h, max_w = samples.tensors.shape[-2:]
@@ -237,6 +255,11 @@ def test_model(config):
             masks = results[0]["masks"]  # (num_queries,1,H,W)
             labels = results[0]["labels"]
             scores = results[0]["scores"]
+
+            # optional debug
+            print(f"[DEBUG] {file_name}: {len(masks)} masks, "
+                  f"labels={labels.tolist()}, "
+                  f"scores={[float(s) for s in scores]}")
 
             body_mask = np.zeros((h, w), dtype=np.uint8)
             panel_mask = np.zeros((h, w), dtype=np.uint8)
@@ -263,6 +286,7 @@ def test_model(config):
     print(
         "[INFERENCE] Inference complete. Use your metric script to compute IoU thresholds."
     )
+
 
 def visualize_predictions(config):
     """

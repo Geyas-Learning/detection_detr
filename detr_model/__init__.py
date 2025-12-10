@@ -42,18 +42,24 @@ def build_segmentation_model(args):
     matcher = build_matcher(args)
 
     # 5. Criterion/Losses
-    weight_dict = {'loss_ce': 1, 'loss_bbox': args.bbox_loss_coef}
-    weight_dict['loss_giou'] = args.giou_loss_coef
-    weight_dict["loss_mask"] = args.mask_loss_coef
-    weight_dict["loss_dice"] = args.dice_loss_coef
+    weight_dict = {
+        'loss_ce': 1.0,
+        'loss_bbox': args.bbox_loss_coef,
+        'loss_giou': args.giou_loss_coef,
+        'loss_mask': args.mask_loss_coef,
+        'loss_dice': args.dice_loss_coef,
+    }
 
     if args.aux_loss:
         aux_weight_dict = {}
-        # Only apply aux loss to the standard detection heads (ce, bbox, giou)
         for i in range(args.dec_layers - 1):
-            keys = ['loss_ce', 'loss_bbox', 'loss_giou']
-            aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items() if k in keys})
+            aux_weight_dict.update({
+                f'loss_ce_{i}': 0.5,
+                f'loss_bbox_{i}': 0.25,
+                f'loss_giou_{i}': 0.25,
+            })
         weight_dict.update(aux_weight_dict)
+
 
     losses = ['labels', 'boxes', 'cardinality', 'masks']
     

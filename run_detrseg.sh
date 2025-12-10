@@ -2,7 +2,7 @@
 #SBATCH -J Segmentation # Job name
 #SBATCH -o /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.out
 #SBATCH -e /mnt/aiongpfs/users/gbanisetty/cvia/logs/spacecraft_%j.err
-#SBATCH --time=48:00:00 # Extend runtime for inference
+#SBATCH --time=30:00:00 # Extend runtime for inference
 #SBATCH --nodes=1 # Single node
 #SBATCH --ntasks=1 # ✅ Correct: Request 1 task for single-GPU
 #SBATCH --cpus-per-task=24 # Threads for data loading

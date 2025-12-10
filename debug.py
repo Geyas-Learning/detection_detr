@@ -1,54 +1,73 @@
 import os
 import cv2
+import numpy as np
 import pandas as pd
+from typing import List, Tuple
 
-DATA_ROOT = "./data"
-csv_path = os.path.join(DATA_ROOT, "val.csv")  # or "train.csv"
-df = pd.read_csv(csv_path)
+# --- Configuration (MUST MATCH YOUR SETUP) ---
+DATA_ROOT = os.path.join(".", "data") 
+# Replace with the actual path to your training CSV
+TRAIN_CSV_FILE = os.path.join(DATA_ROOT, "train_segm_processed.csv") 
+# ---------------------------------------------
 
-# pick a few rows to inspect
-for idx in [0, 10, 50]:
-    row = df.iloc[idx]
-    image_name = row["Image name"]          # e.g. image_00001_img.jpg
-    cls_name = row["Class"]                 # e.g. VenusExpress
+def check_raw_mask_values(csv_file: str, root_dir: str = DATA_ROOT, num_samples: int = 10):
+    """
+    Loads raw mask files based on the CSV and prints the unique pixel values.
+    This helps verify how the Body and Panel classes are encoded (e.g., 0, 10, 200).
+    """
+    try:
+        df = pd.read_csv(csv_file)
+    except FileNotFoundError:
+        print(f"[ERROR] CSV not found: {csv_file}. Please check the path.")
+        return
 
-    # image path: data/images/Class/val/image_00001_img.jpg
-    split = "val"                           # or "train" depending on csv_path
-    img_path = os.path.join(
-        DATA_ROOT, "images", cls_name, split, image_name
-    )
+    print(f"--- Checking Raw Mask Values (First {min(num_samples, len(df))} Samples) ---")
+    
+    # Iterate over a limited number of rows for debugging
+    for idx in range(min(num_samples, len(df))):
+        row = df.iloc[idx]
+        image_name = row["Image name"]
+        cls_name = row["Class"]
+        split = "train" # Assumes the CSV is for the 'train' split
 
-    # mask path: data/mask/Class/val/image_00001_layer.jpg
-    mask_name = image_name.replace("_img.jpg", "_layer.jpg")
-    mask_path = os.path.join(
-        DATA_ROOT, "mask", cls_name, split, mask_name
-    )
+        # Mask path: data/mask/Class/split/image_XXXX_layer.jpg
+        mask_name = image_name.replace("_img.jpg", "_layer.jpg")
+        mask_path = os.path.join(
+            root_dir, "mask", cls_name, split, mask_name
+        )
+        
+        # Read mask as grayscale (single channel)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        
+        if mask is None:
+            print(f"[WARN] Mask missing: {mask_path}")
+            continue
 
-    print(f"Sample {idx}:")
-    print("  img :", img_path)
-    print("  mask:", mask_path)
+        # Find and print unique pixel values
+        unique_values = np.unique(mask)
+        
+        print(f"\n[{idx+1}/{min(num_samples, len(df))}] Mask: {mask_name}")
+        print(f"  → Class: {cls_name}")
+        print(f"  → Unique Pixel Values: {unique_values.tolist()}")
 
-    img = cv2.imread(img_path)
-    mask = cv2.imread(mask_path)
+        # Based on your data loader:
+        # If Body is (mask > 0) and Panel is (mask >= 55), we expect:
+        # - Background: 0
+        # - Body-only: values < 55 (e.g., 1 to 54)
+        # - Panel area: values >= 55 (e.g., 55 to 255)
+        
+        # Sanity Check for 2-class encoding
+        if len(unique_values) == 2 and 0 in unique_values:
+            print("  → **Encoding appears to be single-class (Foreground/Background only).**")
+        elif len(unique_values) >= 3 and 0 in unique_values:
+            panel_pixels = unique_values[unique_values >= 55].tolist()
+            body_pixels = unique_values[(unique_values > 0) & (unique_values < 55)].tolist()
+            print(f"  → **Expected Multi-Class Check (PANEL_THRESHOLD=55):**")
+            print(f"    - Panel Pixels (>= 55): {panel_pixels}")
+            print(f"    - Body Pixels (0 < value < 55): {body_pixels}")
+        
+    print("\n--- Debug Check Complete ---")
 
-    if img is None:
-        print("  [ERROR] could not read image")
-        continue
-    if mask is None:
-        print("  [ERROR] could not read mask")
-        continue
 
-    # overlay
-    mask_resized = cv2.resize(mask, (img.shape[1], img.shape[0]),
-                              interpolation=cv2.INTER_NEAREST)
-    alpha = 0.5
-    overlay = img.copy()
-    non_black = (mask_resized.sum(axis=2) > 0)
-    overlay[non_black] = cv2.addWeighted(
-        img[non_black], 1 - alpha, mask_resized[non_black], alpha, 0
-    )
-
-    os.makedirs("debug_overlays", exist_ok=True)
-    out_path = os.path.join("debug_overlays", f"overlay_{idx}.png")
-    cv2.imwrite(out_path, overlay)
-    print(f"  [OK] saved overlay to {out_path}")
+if __name__ == "__main__":
+    check_raw_mask_values(TRAIN_CSV_FILE)

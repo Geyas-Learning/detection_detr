@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1 # Two tasks (processes) for DDP
 #SBATCH --cpus-per-task=24 # Threads for data loading
 #SBATCH --mem=128G # System memory
-#SBATCH --gres=gpu:1 # ✅ Requests 2 GPUs
+#SBATCH --gres=gpu:2 # ✅ Requests 2 GPUs
 #SBATCH -p gpu # ✅ Use 'gpu' partition
 
 # =======================================================

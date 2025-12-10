@@ -10,7 +10,7 @@ import importlib.util
 import os
 from data_utils_segm import preprocess_original_csv_segm, DATA_ROOT
 
-# --- CHANGE MODEL NAME HERE ---
+
 MODEL_NAME = "detr_pipeline_functions_segm"
 MODEL_FILE_PATH = f"detection_detr/{MODEL_NAME}.py"
 
@@ -48,17 +48,17 @@ def main():
 
     # --- Config ---
     config = {
-        "epochs": 20,
+        "epochs": 15,
         "batch": 4, 
-        # NEW FOLDER: segmentation output will generate in this folder
+        # segmentation output will generate in this folder
         "project_dir": "./runs_segmentation/train_detr", 
         "train_csv": train_csv,
         "val_csv": val_csv,
-        # NEW PATH: testing should be done with "segmentation_test"
+        # tesing files: "segmentation_test"
         "test_images_full_path": "./segmentation_test/images", 
         "run_name": MODEL_NAME
     }
-    # The 'runs_segmentation/' folder structure is managed by the shell script and pipeline
+    
     os.makedirs(config["project_dir"], exist_ok=True) 
 
     # --- Run pipeline ---
@@ -78,7 +78,7 @@ def main():
 
     if hasattr(model_lib, "visualize_predictions"):
         print("\n[STEP 3/3] 🖼️ Skipping visualization. Check predicted_masks folder.")
-        model_lib.visualize_predictions(config) # This will be the dummy function
+        model_lib.visualize_predictions(config)
     else:
         print("❌ visualize_predictions not found.")
 
